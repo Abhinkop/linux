@@ -1,0 +1,252 @@
+# Minimal-ish config for QEMU's aarch64 "virt" machine: boots to a
+# PL011 UART console and can run a real busybox-style initramfs (needs
+# CONFIG_BINFMT_ELF/SCRIPT to exec anything, CONFIG_PROC_FS/SYSFS
+# because most init scripts mount /proc and /sys). See
+# arch/arm64/boot/dts/qemu/ for the matching minimal devicetree.
+#
+# Based on the output of `make savedefconfig` (only the options that
+# differ from plain Kconfig defaults), with BINFMT_ELF/SCRIPT and
+# PROC_FS/SYSFS added back on top. Everything below CONFIG_EXPERT=y is
+# a disable, because EXPERT unlocks a large batch of options that are
+# otherwise invisible and forced on (see the comment above that line)
+# -- turning EXPERT on without also turning those off would not shrink
+# anything.
+#
+# Remaining caveat: a couple of disables drop hardening that's only
+# safe because nothing untrusted runs here (CONFIG_SECCOMP,
+# CONFIG_STACKPROTECTOR, the Spectre/Meltdown mitigations below), and
+# the FUTEX/EPOLL/SHMEM/AIO block is still off -- fine for a plain
+# busybox shell, but re-enable individual ones if your userspace needs
+# threads, event loops, shared memory, or async I/O.
+
+# No custom build tag, cross-process memory access (process_vm_readv),
+# cpuset isolation, or NUMA/cache-aware scheduling: none of it matters
+# with a single CPU (-smp 1) and no other process to isolate from.
+# CONFIG_LOCALVERSION_AUTO is not set
+# CONFIG_CROSS_MEMORY_ATTACH is not set
+# CONFIG_CPU_ISOLATION is not set
+# CONFIG_SCHED_CACHE is not set
+
+CONFIG_BLK_DEV_INITRD=y
+CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+
+# Master switch: makes ~20 normally-hidden, normally-"default y"
+# options below (MULTIUSER, FUTEX, EPOLL, SHMEM, AIO, ...) into
+# visible choices we can turn off. See the caveat at the top: turning
+# these off is fine for "boot to a UART console", not for a real init.
+CONFIG_EXPERT=y
+
+# Multi-user/IPC/async-syscall surface for a full userspace. None of
+# it is touched just reaching a console; re-enable if you load an
+# init that needs threads (FUTEX), event loops (EPOLL), shared memory
+# (SHMEM), or async I/O (AIO/IO_URING).
+# CONFIG_MULTIUSER is not set
+# CONFIG_FHANDLE is not set
+# CONFIG_POSIX_TIMERS is not set
+# CONFIG_FUTEX is not set
+# CONFIG_EPOLL is not set
+# CONFIG_SIGNALFD is not set
+# CONFIG_TIMERFD is not set
+# CONFIG_EVENTFD is not set
+# CONFIG_SHMEM is not set
+# CONFIG_AIO is not set
+# CONFIG_IO_URING is not set
+# CONFIG_ADVISE_SYSCALLS is not set
+# CONFIG_MEMBARRIER is not set
+# CONFIG_RSEQ is not set
+# CONFIG_CACHESTAT_SYSCALL is not set
+# Debug/introspection, dropped for size: BUG() compiles to a bare trap
+# instead of printing file/line, and there's no symbol table to
+# resolve addresses in a backtrace.
+# CONFIG_BUG is not set
+# CONFIG_KALLSYMS is not set
+
+# Silicon errata workarounds for real hardware (Ampere, Cavium/
+# ThunderX2, Fujitsu, HiSilicon, Qualcomm Falkor/QDF2400, NVIDIA
+# Carmel/Olympus, Renesas, Rockchip, Socionext, Freescale) plus the
+# generic Meltdown/Spectre mitigations (KPTI, branch-history
+# mitigation). QEMU's -cpu cortex-a57 model has none of these errata,
+# and nothing untrusted runs in this test image to defend against
+# Spectre/Meltdown -- don't carry this into anything that does.
+# CONFIG_AMPERE_ERRATUM_AC03_CPU_38 is not set
+# CONFIG_AMPERE_ERRATUM_AC04_CPU_23 is not set
+# CONFIG_ARM64_ERRATUM_826319 is not set
+# CONFIG_ARM64_ERRATUM_827319 is not set
+# CONFIG_ARM64_ERRATUM_824069 is not set
+# CONFIG_ARM64_ERRATUM_819472 is not set
+# CONFIG_ARM64_ERRATUM_832075 is not set
+# CONFIG_ARM64_ERRATUM_843419 is not set
+# CONFIG_ARM64_ERRATUM_1024718 is not set
+# CONFIG_ARM64_ERRATUM_1165522 is not set
+# CONFIG_ARM64_ERRATUM_1319367 is not set
+# CONFIG_ARM64_ERRATUM_1530923 is not set
+# CONFIG_ARM64_ERRATUM_1463225 is not set
+# CONFIG_ARM64_ERRATUM_1508412 is not set
+# CONFIG_ARM64_ERRATUM_2051678 is not set
+# CONFIG_ARM64_ERRATUM_2077057 is not set
+# CONFIG_ARM64_ERRATUM_2658417 is not set
+# CONFIG_ARM64_ERRATUM_2054223 is not set
+# CONFIG_ARM64_ERRATUM_2067961 is not set
+# CONFIG_ARM64_ERRATUM_2645198 is not set
+# CONFIG_ARM64_ERRATUM_2966298 is not set
+# CONFIG_ARM64_ERRATUM_3117295 is not set
+# CONFIG_ARM64_ERRATUM_3194386 is not set
+# CONFIG_ARM64_ERRATUM_4311569 is not set
+# CONFIG_ARM64_ERRATUM_4118414 is not set
+# CONFIG_CAVIUM_ERRATUM_22375 is not set
+# CONFIG_CAVIUM_ERRATUM_23154 is not set
+# CONFIG_CAVIUM_ERRATUM_27456 is not set
+# CONFIG_CAVIUM_ERRATUM_30115 is not set
+# CONFIG_CAVIUM_TX2_ERRATUM_219 is not set
+# CONFIG_FUJITSU_ERRATUM_010001 is not set
+# CONFIG_HISILICON_ERRATUM_161600802 is not set
+# CONFIG_HISILICON_ERRATUM_162100801 is not set
+# CONFIG_HISILICON_ERRATUM_162100125 is not set
+# CONFIG_QCOM_FALKOR_ERRATUM_1003 is not set
+# CONFIG_QCOM_FALKOR_ERRATUM_1009 is not set
+# CONFIG_QCOM_QDF2400_ERRATUM_0065 is not set
+# CONFIG_QCOM_FALKOR_ERRATUM_E1041 is not set
+# CONFIG_NVIDIA_CARMEL_CNP_ERRATUM is not set
+# CONFIG_NVIDIA_OLYMPUS_1027_ERRATUM is not set
+# CONFIG_RENESAS_ERRATUM_GEN4GICITS1 is not set
+# CONFIG_ROCKCHIP_ERRATUM_3568002 is not set
+# CONFIG_ROCKCHIP_ERRATUM_3588001 is not set
+# CONFIG_SOCIONEXT_SYNQUACER_PREITS is not set
+# CONFIG_UNMAP_KERNEL_AT_EL0 is not set
+# CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY is not set
+
+# Optional ARMv8.1-9.x CPU features (pointer auth, BTI, SVE, RAS, CNP,
+# AMU, TLB range ops, POE, GCS, tagged-pointer ABI) that -cpu
+# cortex-a57 doesn't implement, so support for them is dead code here.
+# Also kernel relocation/KASLR (RELOCATABLE): we always load at a
+# fixed address in this setup, so there's nothing to relocate.
+# CONFIG_ARM64_TAGGED_ADDR_ABI is not set
+# CONFIG_ARM64_HW_AFDBM is not set
+# CONFIG_ARM64_RAS_EXTN is not set
+# CONFIG_ARM64_CNP is not set
+# CONFIG_ARM64_PTR_AUTH is not set
+# CONFIG_ARM64_AMU_EXTN is not set
+# CONFIG_ARM64_TLB_RANGE is not set
+# CONFIG_ARM64_BTI is not set
+# CONFIG_ARM64_E0PD is not set
+# CONFIG_ARM64_EPAN is not set
+# CONFIG_ARM64_POE is not set
+# CONFIG_ARM64_GCS is not set
+# CONFIG_ARM64_SVE is not set
+# CONFIG_RELOCATABLE is not set
+
+# Fixed command line so the UART console comes up even if you forget
+# -append; see arch/arm64/boot/dts/qemu/qemu-virt-uart-min.dts for the
+# stdout-path that also points at the PL011.
+CONFIG_CMDLINE="console=ttyAMA0 earlycon"
+CONFIG_CMDLINE_FORCE=y
+# No EFI firmware in this boot path (kernel loaded directly via
+# -kernel, not through an EFI stub), so EFI support is dead code.
+# CONFIG_EFI is not set
+# No suspend/resume exercised in a disposable QEMU test VM.
+# CONFIG_SUSPEND is not set
+
+# SMT/cluster/multi-core-aware scheduling: nothing to exploit with
+# -smp 1. SECCOMP: no sandboxing needed for a trusted test image.
+# STACKPROTECTOR / RANDOMIZE_KSTACK_OFFSET: hardening dropped for the
+# same reason as the Spectre/Meltdown mitigations above. BLOCK: no
+# block device anywhere in this boot (root lives entirely in an
+# initramfs in RAM), so the whole block layer is unused weight.
+# CONFIG_SCHED_SMT is not set
+# CONFIG_SCHED_CLUSTER is not set
+# CONFIG_SCHED_MC is not set
+# CONFIG_SECCOMP is not set
+# CONFIG_STACKPROTECTOR is not set
+# CONFIG_RANDOMIZE_KSTACK_OFFSET is not set
+# CONFIG_BLOCK is not set
+
+# ELF loader (to exec busybox et al) and #!-script loader (to exec a
+# shebang '/init'), both needed to actually run an initramfs. No core
+# dumps though -- nothing here is being debugged.
+CONFIG_BINFMT_ELF=y
+CONFIG_BINFMT_SCRIPT=y
+# CONFIG_COREDUMP is not set
+
+# SLUB_TINY trades allocator speed for smaller code -- fine for a
+# disposable test kernel. No 32-bit compat brk layout, no memory
+# compaction, no split DMA/DMA32 zones (one flat 256M region, no
+# legacy 32-bit-DMA-only devices), no vmstat event counters: nothing
+# here needs the accounting.
+CONFIG_SLUB_TINY=y
+# CONFIG_COMPAT_BRK is not set
+# CONFIG_COMPACTION is not set
+# CONFIG_ZONE_DMA is not set
+# CONFIG_ZONE_DMA32 is not set
+# CONFIG_VM_EVENT_COUNTERS is not set
+# memfd_secret(): only useful for keeping secrets from a hostile root;
+# irrelevant with no untrusted userspace.
+# CONFIG_SECRETMEM is not set
+
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+# STANDALONE/PREVENT_FIRMWARE_BUILD/FW_LOADER: nothing here needs
+# runtime firmware blobs (PL011/GIC/timer are all fully programmed by
+# the devicetree, no firmware file to load), so drop the firmware
+# loading machinery entirely. ALLOW_DEV_COREDUMP: no driver here ever
+# produces one.
+# CONFIG_STANDALONE is not set
+# CONFIG_PREVENT_FIRMWARE_BUILD is not set
+# CONFIG_FW_LOADER is not set
+# CONFIG_ALLOW_DEV_COREDUMP is not set
+# SMCCC SoC-ID bus: only useful for identifying which real SoC you're
+# on; QEMU's "linux,dummy-virt" isn't a real SoC to identify.
+# CONFIG_ARM_SMCCC_SOC_ID is not set
+
+CONFIG_SERIAL_AMBA_PL011=y
+CONFIG_SERIAL_AMBA_PL011_CONSOLE=y
+# No hwrng, no raw /dev/mem or /dev/port physical-memory access, no
+# hardware monitoring sensors, no USB controller, no virtio/vhost
+# devices, no Microsoft Surface or other vendor platform glue: none
+# of these are present on this minimal -M virt invocation (no -device
+# for any of them), so their drivers would never probe anything.
+# CONFIG_HW_RANDOM is not set
+# CONFIG_DEVMEM is not set
+# CONFIG_DEVPORT is not set
+# CONFIG_HWMON is not set
+# CONFIG_USB_SUPPORT is not set
+# CONFIG_VIRTIO_MENU is not set
+# CONFIG_VHOST_MENU is not set
+# CONFIG_SURFACE_PLATFORMS is not set
+# CONFIG_ARM64_PLATFORM_DEVICES is not set
+# Arch-timer event stream: used to wake idle CPUs; we don't do
+# CPU idle/power management in this minimal boot. The remaining
+# erratum entries here are arch-timer-specific and QEMU/cortex-a57
+# hits none of them, same reasoning as the errata block above.
+# CONFIG_ARM_ARCH_TIMER_EVTSTREAM is not set
+# CONFIG_FSL_ERRATUM_A008585 is not set
+# CONFIG_HISILICON_ERRATUM_161010101 is not set
+# CONFIG_ARM64_ERRATUM_858921 is not set
+# No IOMMU/SMMU is modeled on this minimal -M virt invocation.
+# CONFIG_IOMMU_SUPPORT is not set
+
+# /proc and /sysfs: on, since a typical busybox /init does
+# `mount -t proc none /proc` and `mount -t sysfs none /sys` before
+# doing anything else. flock()/fcntl() locking, dnotify, inotify, and
+# misc filesystems stay off -- a plain shell/init doesn't use them;
+# re-enable if your userspace does (e.g. inotify-based tools).
+# CONFIG_FILE_LOCKING is not set
+# CONFIG_DNOTIFY is not set
+# CONFIG_INOTIFY_USER is not set
+CONFIG_PROC_FS=y
+CONFIG_SYSFS=y
+# CONFIG_MISC_FILESYSTEMS is not set
+
+# The rest: pure size/debug trims with no functional effect on this
+# boot path. CRC_OPTIMIZATIONS just drops arch-specific CRC32 asm (the
+# generic C fallback still works). SYMBOLIC_ERRNAME/DEBUG_MISC are
+# debug-print conveniences. SECTION_MISMATCH_WARN_ONLY only affects
+# build-time strictness, not the kernel binary. RCU_TRACE, FTRACE, and
+# RUNTIME_TESTING_MENU are tracing/self-test infrastructure we never
+# invoke here.
+# CONFIG_CRC_OPTIMIZATIONS is not set
+# CONFIG_SYMBOLIC_ERRNAME is not set
+# CONFIG_DEBUG_MISC is not set
+# CONFIG_SECTION_MISMATCH_WARN_ONLY is not set
+# CONFIG_RCU_TRACE is not set
+# CONFIG_FTRACE is not set
+# CONFIG_RUNTIME_TESTING_MENU is not set
