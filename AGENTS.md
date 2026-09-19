@@ -7,7 +7,7 @@ the start of every Claude Code session here (Claude Code reads it via the
 ## What this repo is
 
 A fork of mainline Linux (`github.com/Abhinkop/linux`), branch
-`microkernel-linux`, currently tracking ~7.3-rc2. Goal: turn Linux into (the
+`microkernel-linux`, currently tracking ~7.3-rc3. Goal: turn Linux into (the
 start of) a microkernel by moving device drivers out of kernel space into
 ordinary userspace processes, one driver at a time. **Only the QEMU aarch64
 `virt` machine is supported.** Nothing else is a target.
