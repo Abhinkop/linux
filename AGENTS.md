@@ -38,9 +38,16 @@ inside it**:
 (requirement: "the host provides Docker and nothing else"). Every build and
 boot runs inside the project's container.
 
-So **do not run `make`, `CROSS_COMPILE=… make`, or `qemu-system-aarch64`
-directly.** They are not installed and their absence is not a bug to fix.
+So **do not run `make`, `CROSS_COMPILE=… make`, or `qemu-system-aarch64` on
+the host.** They are not installed and their absence is not a bug to fix.
 Earlier versions of this file told you to; that was wrong.
+
+Inside the container is different — the cross toolchain and QEMU are right
+there, and a direct `make` is the correct tool when you need many kernel
+builds in a row (a config search does hundreds; a bitbake round trip each
+time would be impractical). See `stage2-minimal-config/harness/` in the
+coordinator repo for that pattern. For anything you intend to *ship*, go
+through bitbake, so what you verified is what gets deployed.
 
 The kernel is built by Yocto in **dev mode**, where `EXTERNALSRC` points at
 this tree. That means: **edit a file here, re-run the build, done.** No
@@ -52,12 +59,17 @@ commit, no push, no `SRCREV` bump. Build output goes outside this tree, so
 From the workspace root (`..` from here):
 
 ```
-scripts/dev-container.sh bash scripts/build.sh core-image-minimal
-scripts/dev-container.sh bash scripts/boot.sh 180
+scripts/dev-container.sh bash scripts/build.sh linux-microkernel microkernel-initramfs
+scripts/dev-container.sh bash scripts/boot.sh 60
 ```
 
-`scripts/build.sh linux-microkernel` builds just the kernel when you don't
-need the rootfs rebuilt.
+`scripts/build.sh linux-microkernel` builds just the kernel when the
+initramfs has not changed.
+
+**`core-image-minimal` will not boot this kernel.** `virt_min_defconfig` has
+no `MULTIUSER`, `PROC_FS`, `SYSFS` or `FILE_LOCKING`, so sysvinit and udev
+cannot run on it. `microkernel-initramfs` is the matching userspace: one
+freestanding binary and a `/dev/console` node.
 
 **`scripts/boot.sh` is the single source of truth for the QEMU invocation.**
 Do not write out a `qemu-system-aarch64` command line anywhere else — this
@@ -65,48 +77,81 @@ file used to carry its own copy, it drifted out of agreement with the real
 one, and that is what made this document dangerous. If the invocation needs
 to change, change `boot.sh`.
 
-`boot.sh` exiting on its timeout is **not** a failure: init reaches a login
-prompt and sits there, so QEMU gets killed on the timer. Read the serial log
-for what you actually wanted to check.
+`boot.sh` timing out **is** a failure now. `microkernel-initramfs` powers the
+machine off when it is done, so a healthy boot exits by itself in a few
+seconds and `boot.sh` returns 0. (This was inverted during stage 1, when the
+rootfs dropped to a login prompt and waited forever.)
 
 ## Current state — keep this section honest as work lands
 
-Stage 1 (dev environment) is **complete and verified** as of 2026-09-20: the
-kernel builds from this tree via `EXTERNALSRC` and `core-image-minimal` boots
-on QEMU aarch64 `virt` to a login prompt. The version string
-`7.3.0-rc3-gca44a7dbff38` confirms the build came from this checkout.
+**Stage 1 (dev environment): complete**, 2026-09-20. The kernel builds from
+this tree via `EXTERNALSRC` and boots on QEMU aarch64 `virt`.
 
-That baseline is deliberately the **stock arm64 `defconfig`** with no custom
-devicetree — a known-good reference, so that a later failure means the config
-is wrong rather than the setup.
+**Stage 2 (minimal configuration): the config is found and verified**,
+2026-09-20. `arch/arm64/configs/virt_min_defconfig`.
 
-**Current milestone: stage 2 — minimal configuration.** Strip the config to
-the least that still boots on `virt`: keep the PL011 UART, GIC, architected
-timer, PSCI; everything else comes out. Stage 2 is not done when it boots —
-it is done when minimality is **demonstrated**, i.e. for each symbol still
-enabled, turning it off breaks the build or the boot.
+It was not written by hand. It is the output of a delta-debugging search
+(`stage2-minimal-config/` in the coordinator repo, with the harness and the
+evidence), and it is **1-minimal**: disabling any symbol it enables breaks
+the build or the boot. That is stage 2's done-condition satisfied by
+construction rather than asserted.
 
-**Two artifacts in this tree predate the current plan and are UNVERIFIED
-under the current setup — do not assume they work:**
+| | enabled symbols | `Image` | kernel code |
+|---|---|---|---|
+| stage 1 stock `defconfig` | — | 42,609,152 | — |
+| `virt_uart_defconfig` | 499 | 3,426,312 | — |
+| **`virt_min_defconfig`** | **439** | **2,875,400** | **1536K** |
+| `tinyconfig` (does not boot) | 416 | — | — |
 
-- `arch/arm64/configs/virt_uart_defconfig` (commit `ae3b635f96b4`) —
-  tinyconfig-based, claimed to boot to a UART console with MULTIUSER, FUTEX,
-  EPOLL, SIGNALFD, EVENTFD, SHMEM, BLOCK, PROC_FS, SYSFS and FILE_LOCKING
-  off. `SERIAL_AMBA_PL011`(+`_CONSOLE`) on.
-- `arch/arm64/boot/dts/qemu/qemu-virt-uart-min.dts` (commit `5a644e5ea249`)
-  — hand-trimmed devicetree: PSCI, GIC, arch timer, memory, PL011 only.
+Verified through bitbake end to end, not just a direct `make`: the deployed
+`Image` is byte-identical to the searched one, and `scripts/boot.sh` returns
+0 with `Run /init as init process` followed by userspace writing to the
+PL011 console and powering off.
 
-They were built and booted with a host cross-toolchain and a hand-passed
-`-dtb`, which is **not** how this project builds now. They are a strong
-head start on stage 2, quite possibly most of it — but they have never been
-through the Yocto path, and `boot.sh` passes no `-dtb` at all (QEMU
-generates a devicetree matching the machine it built). Re-verify before
-claiming stage 2 progress, and expect the DTS to need a decision about
-whether a hand-written DT is wanted at all yet.
+Seven symbols carry it, each proven necessary: `BINFMT_ELF`,
+`BLK_DEV_INITRD`, `PRINTK`, `SERIAL_AMBA_PL011`, `SERIAL_AMBA_PL011_CONSOLE`,
+`TTY`, `RD_GZIP` — plus explicit disables for the 76 symbols Kconfig would
+otherwise switch on by default.
 
-Earlier notes in this file also claimed userspace "already works end to end
-— PID 1 exec, syscall ABI, `/dev/console` I/O — don't redo this." Nothing in
-this tree demonstrates that. Treat it as an unverified inherited claim.
+**Two results from that search worth carrying forward:**
+
+- **`CONFIG_VT` is not needed for a serial console.**
+  `SERIAL_AMBA_PL011_CONSOLE` registers directly. `VT` was only ever on
+  because it is `default y` under `TTY`, and it drags in `INPUT`, `HID`,
+  `KEYBOARD_ATKBD`, seven `MOUSE_PS2_*` drivers and both PTY layers.
+  Dropping it is most of the reduction.
+- **`CONFIG_PRINTK` is required for the console to work at all**, not merely
+  for kernel log messages. That constrains stage 6, which moves the console
+  subsystem out of the kernel first: the printk core is entangled with it.
+
+**The devicetree is now passed explicitly.**
+`arch/arm64/boot/dts/qemu/qemu-virt-uart-min.dts` is built by the kernel
+recipe (`KERNEL_DEVICETREE`) and passed by `scripts/boot.sh`. With a config
+this small the drivers for anything extra are absent, so booting without a
+`-dtb` also works — it is passed anyway so the device set is *declared*
+rather than inferred from whatever QEMU generates, and the config and the DT
+can be checked against each other. Its memory node hardcodes 256M, and the
+DT wins over `-m`, which is why `boot.sh` uses `-m 256`.
+
+`arch/arm64/configs/virt_uart_defconfig` still works (it builds and boots
+through bitbake; that was checked) but it is superseded — 60 symbols of the
+input/HID/PS2/PTY and decompressor machinery it enables are provably
+unnecessary.
+
+**Current milestone: stage 3 — GPIO (PL061) in userspace.** Config additions
+needed to make that possible stay minimal, and go through the same
+demonstrate-don't-assert bar.
+
+A caveat before reusing `virt_min_defconfig` anywhere else: it is minimal
+**for one freestanding init**. A busybox shell additionally needs
+`MULTIUSER`, `PROC_FS`, `SYSFS` and probably `FILE_LOCKING`. If stage 3 needs
+an interactive shell, that is a larger config and the harness can find its
+floor the same way.
+
+Earlier notes in this file claimed userspace "already works end to end — PID
+1 exec, syscall ABI, `/dev/console` I/O — don't redo this." That is now
+actually true and demonstrated, by `microkernel-initramfs` rather than by
+whatever produced the original claim.
 
 ## The plan, and what supersedes what
 
