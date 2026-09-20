@@ -1,19 +1,27 @@
 ---
-description: Build the current defconfig and boot it under the project's fixed QEMU invocation, showing serial output.
+description: Build the kernel and rootfs via the project container and boot them, showing serial output.
 ---
 
-Build the kernel and boot-test it exactly as the `boot-verifier` subagent
-does:
+Build and boot-test exactly as the `boot-verifier` subagent does. Nothing
+runs on the host — there is no `make`, `gcc` or `qemu-system-aarch64` here.
 
-1. `ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- make -j$(nproc) Image dtbs`
-2. Boot with:
+Run from the coordinator workspace root (`..` from the kernel tree):
+
+1. Build:
    ```
-   timeout 30 qemu-system-aarch64 -M virt -cpu cortex-a57 -smp 1 -m 256 -nographic \
-       -kernel arch/arm64/boot/Image \
-       -dtb arch/arm64/boot/dts/qemu/qemu-virt-uart-min.dtb \
-       -initrd $ARGUMENTS
+   scripts/dev-container.sh bash scripts/build.sh core-image-minimal
    ```
-   (pass the initramfs path as the command's argument, e.g.
-   `/boot-test rootfs.cpio.gz`)
-3. Show the full serial output, and call out explicitly whether it looks
-   like a clean boot or not — don't just dump the log with no verdict.
+   (`scripts/build.sh linux-microkernel` for kernel-only.) Dev mode builds
+   straight from the `linux/` tree — no commit or push needed.
+
+2. Boot, with an argument for the timeout in seconds (default 180, e.g.
+   `/boot-test 240`):
+   ```
+   scripts/dev-container.sh bash scripts/boot.sh $ARGUMENTS
+   ```
+   `boot.sh` owns the QEMU invocation — do not write your own command line.
+
+3. Show the serial output and give an explicit verdict — don't dump the log
+   with no conclusion. Note that `boot.sh` being killed on its timeout is
+   expected: init reaches a login prompt and waits there. Judge by the log
+   contents, not the exit path.
