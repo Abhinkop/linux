@@ -96,12 +96,28 @@ evidence), and it is **1-minimal**: disabling any symbol it enables breaks
 the build or the boot. That is stage 2's done-condition satisfied by
 construction rather than asserted.
 
-| | enabled symbols | `Image` | kernel code |
-|---|---|---|---|
-| stage 1 stock `defconfig` | — | 42,609,152 | — |
-| `virt_uart_defconfig` | 499 | 3,426,312 | — |
-| **`virt_min_defconfig`** | **439** | **2,875,400** | **1536K** |
-| `tinyconfig` (does not boot) | 416 | — | — |
+**There are two configs, differing by exactly one symbol.**
+`virt_min_defconfig` runs a single freestanding binary and cannot be typed at;
+`virt_shell_defconfig` adds `CONFIG_BINFMT_SCRIPT=y` and gives an interactive
+busybox shell (with `microkernel-shell-image`). Use the shell one to develop
+in; `virt_min_defconfig` is the number the project is judged on.
+
+Measured, not estimated — kbuild records the source of every object in a
+`.cmd` file, so the set of compiled translation units is exact:
+
+| config | `.c`/`.S` files | code lines | + headers | `Image` | symbols |
+|---|---|---|---|---|---|
+| stock arm64 `defconfig` | 4,401 | 2,707,870 | 3,360,334 | 52,374,016 | 4,946 |
+| **`virt_min_defconfig`** | **545** | **309,905** | **581,231** | **2,875,400** | **439** |
+| `virt_shell_defconfig` | 546 | 310,001 | 581,327 | 2,875,400 | 440 |
+
+**88.6% less compiled source than the stock defconfig — 8.7x fewer lines
+running at EL1.** A shell costs +1 file (`fs/binfmt_script.c`, 159 lines), +96
+lines of code and zero bytes of `Image`.
+
+`BINFMT_SCRIPT` is needed only because `/init` is a `#!` script — the kernel
+cannot exec it otherwise. An `/init` that is the busybox binary directly might
+cost nothing; untested.
 
 Verified through bitbake end to end, not just a direct `make`: the deployed
 `Image` is byte-identical to the searched one, and `scripts/boot.sh` returns
@@ -143,10 +159,12 @@ needed to make that possible stay minimal, and go through the same
 demonstrate-don't-assert bar.
 
 A caveat before reusing `virt_min_defconfig` anywhere else: it is minimal
-**for one freestanding init**. A busybox shell additionally needs
-`MULTIUSER`, `PROC_FS`, `SYSFS` and probably `FILE_LOCKING`. If stage 3 needs
-an interactive shell, that is a larger config and the harness can find its
-floor the same way.
+**for one freestanding init**. For an interactive shell use
+`virt_shell_defconfig` — which is only one symbol larger, measured rather than
+guessed. (An earlier version of this file claimed a shell would need
+`MULTIUSER`, `PROC_FS`, `SYSFS` and `FILE_LOCKING`. The search eliminated all
+four: `MULTIUSER` off merely stubs setuid, and ash needs neither `/proc` nor
+`/sys` mounted to give a prompt.)
 
 Earlier notes in this file claimed userspace "already works end to end — PID
 1 exec, syscall ABI, `/dev/console` I/O — don't redo this." That is now
