@@ -5,10 +5,12 @@
  * from QEMU's own auto-generated DTB and trimmed of everything not
  * needed for that (virtio-mmio, PCIe, flash, RTC, GPIO, fw-cfg, ...).
  *
- * Companion to arch/arm64/configs/virt_uart_defconfig. Matches:
- *   qemu-system-aarch64 -M virt -cpu cortex-a57 -smp 1 -m 256 -nographic \
- *       -kernel arch/arm64/boot/Image \
- *       -dtb arch/arm64/boot/dts/qemu/qemu-virt-uart-min.dtb
+ * Companion to arch/arm64/configs/virt_min_defconfig. Built by the kernel
+ * recipe (KERNEL_DEVICETREE) and passed by scripts/boot.sh, which owns the
+ * QEMU invocation -- don't write a second copy of that command line here.
+ *
+ * The memory node below hardcodes 256M and the DT wins over QEMU's -m, so
+ * boot.sh passes -m 256 to match. Change one and you must change the other.
  *
  * memory/cpu/gic nodes are static, unlike QEMU's generated DTB which
  * adapts to -smp/-m/-cpu: this one only matches the invocation above.
